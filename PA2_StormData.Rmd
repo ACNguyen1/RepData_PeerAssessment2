@@ -1,0 +1,163 @@
+## Title: Data Analysis on The Impact of Severe Weather Events on U.S. Public Health (fatalities & injuries) and Economy (property & crop damages)
+
+
+## Synopsis:
+
+The purpose of this data analysis is to analyze the impact of weather events on U.S. public health and economy based on the downloaded storm data from the U.S. National Oceanic and Atmospheric Administration's (NOAA) from 1950 - 2011. The data analysis, however, extracted a subset of NOAA's storm data from 1990 to 2011 and used the subset's data elements related to fatalities, injuries, property and crop damages to determine the top 15 weather event types that are considered harmful to U.S. population health and economy. The data analysis concluded that within the top 15 weather event types, excessive heat and tornado are most harmful to population health in regard to total number of fatalities and injuries. On the other hand, hurricane/typhoon, storm, and flood have the greatest negative economic impact as they cause the most property and crop damages.
+
+
+## Data Processing:
+
+```{r}
+echo = TRUE
+library(R.utils) 
+library(plyr)
+library(grid) 
+library(ggplot2)
+library(gridExtra) 
+```
+
+Download the raw data file and extract for data analysis (902297 rows and 37 columns):
+
+```{r}
+setwd("C:/Users/nguyen/Documents/GitHub/RepData_PeerAssessment2")
+
+if(!file.exists("StormData.csv")){
+  download.file("http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", destfile="stormData.csv.bz2")
+  bunzip2("StormData.csv.bz2","StormData.csv",overwrite=TRUE, remove=FALSE)
+}
+stormData <- read.csv("StormData.csv")
+dim(stormData)
+```
+
+The weather events in the extracted Storm Data are from 1950 to 2011. It is determined that in the earlier years, there are generally fewer events recorded due to a lack of good records as shown in the histogram of Total of U.S. Storm Events by Year:
+
+```{r}
+stormData$Year <- as.numeric(format(as.Date(stormData$BGN_DATE, format = "%m/%d/%Y %H:%M:%S"), "%Y"))
+colors = c("red", "yellow", "green", "violet", "orange", "blue", "pink", "cyan")
+hist(stormData$Year, main=paste("Total of U.S. Storm Events by Year"),xlab="Event Year", ylab="Total Events Recorded", col=colors)
+```
+
+Also, it is considered that the data collected in recent years is more complete.
+Therefore, extract a subset of storm data from 1990 to 2011 and include only appliable data elements for data analysis (751740 rows and 9 columns):
+
+```{r}
+stormData_2 <- stormData[stormData$Year >= 1990, ]
+appColumns <- c("BGN_DATE", "EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP", "Year")
+extractedStormData <- stormData_2[, appColumns]
+dim(extractedStormData)
+```
+
+Calculate Top 15 Total Fatalities and Injuries for plotting:
+
+```{r}
+sumFatalities <- aggregate(extractedStormData[, 3], by = list(extractedStormData$EVTYPE), FUN = "sum")
+sumInjuries <- aggregate(extractedStormData[, 4], by = list(extractedStormData$EVTYPE), FUN = "sum")
+sumFatalities <- arrange(sumFatalities, sumFatalities[, 2], decreasing = T)
+sumInjuries <- arrange(sumInjuries, sumInjuries[, 2], decreasing = T)
+sumFatalities <- head(sumFatalities, n = 15)
+sumInjuries <- head(sumInjuries, n = 15)
+names(sumFatalities) <- c("EventType", "Fatalities")
+names(sumInjuries) <- c("EventType", "Injuries")
+```
+
+Function to calculate the exponent based on possible values of CROPDMGEXP and PROPDMGEXP:
+(H,h,K,k,M,m,B,b,+,-,?,0,1,2,3,4,5,6,7,8,and blank-character)
+H,h = hundreds = 100
+K,k = kilos = thousands = 1,000
+M,m = millions = 1,000,000
+B,b = billions = 1,000,000,000
+black/empty character = 0
+numeric 0..8 = 0..8
+others = NA
+
+```{r}
+calcExp <- function(x){
+  if(is.numeric(x)) {x <- x}
+  else if(grepl("h", x, ignore.case=TRUE)) {x <- 2}
+  else if(grepl("H", x, ignore.case=TRUE)) {x <- 2}
+  else if(grepl("k", x, ignore.case=TRUE)) {x <- 3}
+  else if(grepl("K", x, ignore.case=TRUE)) {x <- 3}
+  else if(grepl("m", x, ignore.case=TRUE)) {x <- 6}
+  else if(grepl("M", x, ignore.case=TRUE)) {x <- 6}
+  else if(grepl("b", x, ignore.case=TRUE)) {x <- 9}
+  else if(grepl("B", x, ignore.case=TRUE)) {x <- 9}
+  else if(x == "" | x == " ") {x <- 0}
+  else {x <- NA}
+  x
+}
+```
+
+Function to calculate the value of damage based on the calcucated exponent:
+
+```{r}
+calcDamageValue <- function(value, exp){
+    if(is.numeric(value)){value <- value * (10 ^ calcExp(exp))}
+    else {value <- 0}
+    value
+}
+```
+
+Calculate and add two new columns: propDamage & cropDamage to the extracted Storm Data:
+
+```{r}
+extractedStormData$propDamage <- mapply(calcDamageValue, extractedStormData$PROPDMG, extractedStormData$PROPDMGEXP)
+extractedStormData$cropDamage <- mapply(calcDamageValue, extractedStormData$CROPDMG, extractedStormData$CROPDMGEXP)
+```
+
+Calculate Top 15 Property and Crop Damages for plotting:
+
+```{r}
+sumPropDamage <- aggregate(extractedStormData[, 10], by = list(extractedStormData$EVTYPE), FUN = "sum")
+sumCropDamage <- aggregate(extractedStormData[, 11], by = list(extractedStormData$EVTYPE), FUN = "sum")
+sumPropDamage <- arrange(sumPropDamage, sumPropDamage[, 2], decreasing = T)
+sumCropDamage <- arrange(sumCropDamage, sumCropDamage[, 2], decreasing = T)
+sumPropDamage <- head(sumPropDamage, n = 15)
+sumCropDamage <- head(sumCropDamage, n = 15)
+names(sumPropDamage) <- c("EventType", "PropDamage")
+names(sumCropDamage) <- c("EventType", "CropDamage")
+```
+
+## Results:
+
+### Impact on U.S. Population Health:
+Within the top 15 weather event types, excessive heat and tornado are most harmful to population health in regard to total number of fatalities and injuries as in the plots arranged side-by-side.
+
+```{r}
+fatalitiesPlot <- ggplot(sumFatalities, aes(x=EventType, y=Fatalities)) + 
+  geom_bar(stat = "identity") +
+  xlab("Event Type") +
+  theme(axis.text.x = element_text(angle = 45, size=8, hjust = 1, vjust = 1)) +
+  ylab("Total Fatalities") +
+  ggtitle("Total Fatalities by Top 15 \n Severe Weather Events in the U.S.\n from 1990 - 2011")
+
+injuriesPlot <- ggplot(sumInjuries, aes(x=EventType, y=Injuries)) + 
+  geom_bar(stat = "identity") +
+  xlab("Event Type") +
+  theme(axis.text.x = element_text(angle = 45, size=8, hjust = 1, vjust = 1)) +
+  ylab("Total Injuries") +
+  ggtitle("Total Injuries by Top 15 \n Severe Weather Events in the U.S.\n from 1990 - 2011")
+
+grid.arrange(fatalitiesPlot, injuriesPlot, ncol = 2)
+```
+
+### Impact on U.S. Economy:
+Within the top 15 weather event types, hurricane/typhoon, storm, and flood have the greatest negative economic impact as they cause the most property and crop damages as in the plots arranged side-by-side.
+
+```{r}
+propDamagePlot <- ggplot(sumPropDamage, aes(x=EventType, y=PropDamage/1000000)) + 
+  geom_bar(stat = "identity") +
+  xlab("Event Type") +
+  theme(axis.text.x = element_text(angle = 45, size=8, hjust = 1, vjust = 1)) +
+  ylab("Total Propery Damages (millions of USD)") +
+  ggtitle("Total U.S. Property Damages by Top 15 \n Severe Weather Events \n from 1990 - 2011")
+
+cropDamagePlot <- ggplot(sumCropDamage, aes(x=EventType, y=CropDamage/1000000)) + 
+  geom_bar(stat = "identity") +
+  xlab("Event Type") +
+  theme(axis.text.x = element_text(angle = 45, size=8, hjust = 1, vjust = 1)) +
+  ylab("Total Crop Damages (millions of USD)") +
+  ggtitle("Total U.S. Crop Damages by Top 15 \n Severe Weather Events \n from 1990 - 2011")
+
+grid.arrange(propDamagePlot, cropDamagePlot, ncol = 2)
+```
